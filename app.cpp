@@ -1,25 +1,19 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-#include "Shader.h" // our custom shader class
-#include "Camera.h" // our custom camera class
+#include "Shader.hpp" // our custom shader class
+#include "Camera.hpp" // our custom camera class
 // #include <stb/stb_image.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 
 #include <string>
 #include <stdio.h>
 #include <iostream>
 #include <math.h>
 
-struct part {
-    glm::vec3 dimensions; // length, width, height of rectangular prism
-    glm::vec3 position;
-    glm::vec3 rotationAxis;
-    float rotation;
-    glm::vec3 color; // 0-1 rgb
-};
+#include "Renderer.hpp"
+#include "Simulation.cpp"
 
 // declare these at the top so that code below can use them, but we can implement at bottom of code
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -40,6 +34,8 @@ bool firstMouse = true;
 // timing
 float deltaTime = 0.0f;	// Time between current frame and last frame
 float lastFrame = 0.0f; // Time of last frame
+
+Simulation worldSim;
 
 int main()
 {
@@ -129,72 +125,6 @@ int main()
         -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f
     };
 
-    std::vector<part> parts = {
-        // body
-        {
-            glm::vec3(3.0f,0.5f,2.0f), // dimensions
-            glm::vec3(0.0f,0.0f,0.0f), // position
-            glm::vec3(1.0f,0.0f,0.0f), // rotation axis
-            0.0f, // amount of rotation (in degrees)
-            glm::vec3(0.0f,1.0f,1.0f) // color
-        },
-
-        // leg 1
-        {
-            glm::vec3(2.0f,0.5f,0.5f),
-            glm::vec3(1.25f,0.0f,2.0f),
-            glm::vec3(0.0f,1.0f,0.0f),
-            glm::pi<float>()/2,
-            glm::vec3(1.0f,0.2f,0.2f)
-        },
-
-        // leg 2
-        {
-            glm::vec3(2.0f,0.5f,0.5f),
-            glm::vec3(0.0f,0.0f,2.0f),
-            glm::vec3(0.0f,1.0f,0.0f),
-            glm::pi<float>()/2,
-            glm::vec3(1.0f,0.2f,0.2f)
-        },
-
-        // leg 3
-        {
-            glm::vec3(2.0f,0.5f,0.5f),
-            glm::vec3(-1.25f,0.0f,2.0f),
-            glm::vec3(0.0f,1.0f,0.0f),
-            glm::pi<float>()/2,
-            glm::vec3(1.0f,0.2f,0.2f)
-        },
-
-        // leg 4
-        {
-            glm::vec3(2.0f,0.5f,0.5f),
-            glm::vec3(1.25f,0.0f,-2.0f),
-            glm::vec3(0.0f,1.0f,0.0f),
-            glm::pi<float>()/2,
-            glm::vec3(1.0f,0.2f,0.2f)
-        },
-
-        // leg 5
-        {
-            glm::vec3(2.0f,0.5f,0.5f),
-            glm::vec3(0.0f,0.0f,-2.0f),
-            glm::vec3(0.0f,1.0f,0.0f),
-            glm::pi<float>()/2,
-            glm::vec3(1.0f,0.2f,0.2f)
-        },
-
-        // leg 6
-        {
-            glm::vec3(2.0f,0.5f,0.5f),
-            glm::vec3(-1.25f,0.0f,-2.0f),
-            glm::vec3(0.0f,1.0f,0.0f),
-            glm::pi<float>()/2,
-            glm::vec3(1.0f,0.2f,0.2f)
-        }
-    };
-
-
 
     unsigned int VBO, cubeVAO; // create Vertex Buffer Object, Vertex Array Object
     
@@ -227,14 +157,18 @@ int main()
     lightingShader.setInt("material.specular", 1);
     lightingShader.setFloat("material.shininess", 32.0f);
 
+    worldSim = Simulation();
 
     while (!glfwWindowShouldClose(window)) { // main render loop, terminates when glfw gets a close signal
         float currentFrame = glfwGetTime();
-        deltaTime = currentFrame - lastFrame;
+        deltaTime = currentFrame - lastFrame; // useful for physics sim too
         lastFrame = currentFrame; 
 
         processInput(window); // call the process input function every frame
         
+        worldSim.step(deltaTime);
+        std::vector<shape> renderShapes = worldSim.getShapes();
+
         // render functions
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -260,16 +194,15 @@ int main()
 
         glBindVertexArray(cubeVAO);
 
-        // render each part of the robot
-        for (int i = 0; i < parts.size(); i++) {
+        // render each shape of the robot
+        for (int i = 0; i < renderShapes.size(); i++) {
             glm::mat4 modelMat = glm::mat4(1.0f);
-            modelMat = glm::translate(modelMat,parts[i].position);
-            modelMat = glm::rotate(modelMat,parts[i].rotation,parts[i].rotationAxis);
-            modelMat = glm::scale(modelMat,parts[i].dimensions);
+            modelMat *= renderShapes[i].transformation;
+            modelMat = glm::scale(modelMat,renderShapes[i].dimensions);
 
             lightingShader.setMat4("model",modelMat);
 
-            lightingShader.setVec3("color",parts[i].color); // make the light cube have the color of the light
+            lightingShader.setVec3("color",renderShapes[i].color); // make the light cube have the color of the light
 
             glDrawArrays(GL_TRIANGLES,0,36);
         }
